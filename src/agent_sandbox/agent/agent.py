@@ -1,12 +1,11 @@
-class Agent:
-    def __init__(self, goal, state, policy):
-        self.goal = goal
-        self.state = state
-        self.policy = policy
+from agent_sandbox.agent.state import AgentState
 
-    def goal_reached(self):
-        # The convergence condition for this specific example
-        return "treasure" in self.state.inventory
+def goal_achieved(state: AgentState) -> bool:
+    return state.goal_item in state.inventory
 
-    def should_stop(self):
-        return self.state.resolved
+def should_stop(state: AgentState) -> bool:
+    if goal_achieved(state):
+        return True
+    if state.steps_taken >= state.max_steps:
+        return True
+    return False

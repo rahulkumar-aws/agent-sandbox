@@ -1,12 +1,25 @@
-def execute_action(environment, **kwargs):
-    """The unified tool execution layer."""
-    action_type = kwargs.get("action_type")
-    
-    if action_type == "look":
-        return environment.look()
-    elif action_type == "take":
-        return environment.take(kwargs.get("item"))
-    elif action_type == "move":
-        return environment.move(kwargs.get("direction"))
+from agent_sandbox.environment.world import World
+
+def execute_action(world: World, action: str) -> str:
+    tokens = action.split()
+    if not tokens:
+        return "No action."
         
-    return f"Unknown action: {action_type}"
+    verb = tokens[0]
+    args = tokens[1:]
+    
+    # 🛠️ New logging to print which tool is being called
+    print(f"🛠️ [Act] Invoking Tool: '{verb}' with Args: {args}")
+    
+    if verb == "move" and len(tokens) == 2:
+        return world.move(tokens[1])
+    elif verb == "look":
+        return world.look()
+    elif verb == "take" and len(tokens) == 2:
+        return world.take(tokens[1])
+    elif verb == "inventory":
+        return world.inventory()
+    elif verb == "idle":
+        return "Agent is idle."
+    else:
+        return f"Unknown action: {action}"

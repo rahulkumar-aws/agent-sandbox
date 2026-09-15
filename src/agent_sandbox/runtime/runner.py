@@ -1,63 +1,59 @@
-"""
-The Runtime Orchestrator.
-Contains the Sandbox, Task definitions, and the core execution loop.
-"""
 from dataclasses import dataclass
-from typing import List, Callable, Any
+from typing import Callable, Tuple
+from agent_sandbox.environment.world import World
+from agent_sandbox.agent.state import AgentState
+from agent_sandbox.agent.policy import choose_action
+from agent_sandbox.tools.actions import execute_action
 
 @dataclass
 class Task:
-    """Represents the objective the agent needs to achieve."""
+    name: str
     description: str
+    is_goal: Callable[[AgentState, World], bool]
+    setup: Callable[[World, AgentState], None] = lambda world, state: None
 
-@dataclass
 class Sandbox:
-    """The execution environment and the tools available to the agent."""
-    environment: Any
-    tools: List[Callable]
-
-def run_episode(agent, sandbox: Sandbox, task: Task, max_steps: int = 10) -> Any:
-    """
-    The core ReAct control loop.
-    Iteratively runs Observe -> Decide -> Act until termination.
-    """
-    print(f"Task: {task.description}")
-    
-    step = 0
-    while not agent.should_stop() and step < max_steps:
-        step += 1
-        print(f"\n--- Cycle {step} ---")
+    def run_task(self, task: Task, max_steps: int = 30, verbose: bool = True) -> Tuple[World, AgentState, bool]:
+        world = World()
+        state = AgentState(max_steps=max_steps)
+        task.setup(world, state)
         
-        # 1. Decide (Policy selects the next action based on current state)
-        action_name, args = agent.policy(agent.state)
-        print(f"[Decide] Emitted action: {action_name} with args: {args}")
-        
-        # 2. Check early termination
-        if action_name == "stop":
-            print("[Terminate] Agent decided to halt.")
-            agent.state.resolved = True
-            break
+        if verbose:
+            print(f"=== Task: {task.name} ===")
+            print(task.description)
+            print()
             
-        # 3. Act (Execute the discrete tool against the environment)
-        tool_func = next((t for t in sandbox.tools if t.__name__ == action_name), None)
+        initial_obs = world.look()
+        state.update_from_observation(world, initial_obs)
+        state.steps_taken += 1
         
-        if tool_func:
-            feedback = tool_func(sandbox.environment, **args)
-        else:
-            feedback = f"Error: Tool '{action_name}' not found in registered effectors."
+        if verbose:
+            print(f"[Step 1] Initial observation:\n{initial_obs}\n")
+        
+        while state.steps_taken < state.max_steps:
+            if task.is_goal(state, world):
+                return world, state, True
+                
+            # 1. Reason
+            action = choose_action(state, world)
+            if verbose:
+                print(f"[Step {state.steps_taken}] Agent chooses action: {action}")
+                
+            if action == "idle":
+                break
+                
+            # 2. Act
+            observation = execute_action(world, action)
+            if verbose:
+                print(f"Environment says:\n{observation}")
             
-        print(f"[Act] Executed {action_name}. Feedback: {feedback}")
-        
-        # 4. Observe (Ingest feedback back into the agent's state)
-        agent.state.update_from_observation(action_name, feedback)
-        
-        # 5. Evaluate Termination Condition
-        if agent.goal_reached():
-            print("[Terminate] Goal convergence achieved!")
-            agent.state.resolved = True
-            break
-
-    if not getattr(agent.state, 'resolved', False):
-        print(f"\n[Terminate] Max iterations ({max_steps}) reached without convergence.")
-        
-    return agent.state
+            # 3. Observe
+            state.update_from_observation(world, observation)
+            
+            if verbose:
+                print(f"Current room: {state.current_room}, Inventory: {state.inventory}\n")
+                
+            state.steps_taken += 1
+            
+        success = task.is_goal(state, world)
+        return world, state, success
